@@ -20,9 +20,31 @@ That last line is what your loop branches on. "Returns a list" earns nothing —
 the description has to say what is *in* the list.
 """
 
-import config  # noqa: F401 — you'll use this in search_listings
+import re
+
+import config
 from generate import generate
 from utils.data_loader import load_listings
+
+
+def _terms(value: object) -> set[str]:
+    """Normalize searchable text into whole lowercase alphanumeric terms."""
+    return set(re.findall(r"[a-z0-9]+", str(value).lower()))
+
+
+def _size_matches(requested: str, listing_size: str) -> bool:
+    """Match complete size tokens instead of unsafe substring matches."""
+    wanted = requested.strip().lower()
+    available = _terms(listing_size)
+    aliases = {
+        "small": "s",
+        "medium": "m",
+        "large": "l",
+        "xlarge": "xl",
+        "extra-large": "xl",
+    }
+    wanted = aliases.get(wanted, wanted)
+    return wanted in available
 
 
 # ── Tool 1: search_listings ───────────────────────────────────────────────────
@@ -78,8 +100,43 @@ def search_listings(
     Test it from a terminal before you move on:
         python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
     """
-    # TODO: replace this with your implementation
-    return []
+    query_terms = _terms(description)
+    stopwords = {
+        "a", "an", "and", "for", "i", "in", "is", "item", "looking",
+        "me", "of", "please", "some", "the", "to", "want", "with",
+    }
+    query_terms -= stopwords
+
+    ranked: list[tuple[int, float, dict]] = []
+    for listing in load_listings():
+        if max_price is not None and float(listing["price"]) > float(max_price):
+            continue
+        if size and not _size_matches(size, str(listing["size"])):
+            continue
+
+        title_terms = _terms(listing["title"])
+        tag_terms = _terms(" ".join(listing.get("style_tags", [])))
+        color_terms = _terms(" ".join(listing.get("colors", [])))
+        detail_terms = _terms(
+            " ".join(
+                str(listing.get(field) or "")
+                for field in ("description", "category", "brand", "platform")
+            )
+        )
+
+        # Titles and style tags are stronger signals than incidental words in
+        # the long description, so they receive a higher transparent weight.
+        score = (
+            4 * len(query_terms & title_terms)
+            + 3 * len(query_terms & tag_terms)
+            + 2 * len(query_terms & color_terms)
+            + len(query_terms & detail_terms)
+        )
+        if score:
+            ranked.append((score, float(listing["price"]), listing))
+
+    ranked.sort(key=lambda entry: (-entry[0], entry[1], entry[2]["id"]))
+    return [listing for _, _, listing in ranked[: config.SEARCH_RESULT_LIMIT]]
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -112,8 +169,44 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    if not new_item:
+        return "I need a selected listing before I can suggest an outfit."
+
+    item_summary = (
+        f"{new_item.get('title')} | colors: {', '.join(new_item.get('colors', []))} | "
+        f"style: {', '.join(new_item.get('style_tags', []))} | "
+        f"size: {new_item.get('size')}"
+    )
+    items = wardrobe.get("items", []) if isinstance(wardrobe, dict) else []
+
+    if items:
+        wardrobe_lines = []
+        for item in items:
+            wardrobe_lines.append(
+                f"- {item.get('name')} ({item.get('category')}; "
+                f"colors: {', '.join(item.get('colors', []))}; "
+                f"style: {', '.join(item.get('style_tags', []))})"
+            )
+        prompt = (
+            f"New thrift find:\n{item_summary}\n\nUser wardrobe:\n"
+            + "\n".join(wardrobe_lines)
+            + "\n\nSuggest one or two complete outfits. Name the exact saved wardrobe "
+              "pieces you use and briefly explain why they work together."
+        )
+    else:
+        prompt = (
+            f"New thrift find:\n{item_summary}\n\nThe user has no saved wardrobe "
+            "items yet. Give one or two practical general styling ideas and name "
+            "the basic pieces they could pair with it."
+        )
+
+    return generate(
+        prompt,
+        system=(
+            "You are a concise thrift stylist. Ground every suggestion in the "
+            "item details supplied. Do not invent pieces in the saved wardrobe."
+        ),
+    )
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -152,5 +245,22 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "I need an outfit suggestion before I can create a fit card."
+    if not new_item:
+        return "I need a selected listing before I can create a fit card."
+
+    prompt = (
+        f"Selected item: {new_item.get('title')}\n"
+        f"Price: ${float(new_item.get('price', 0)):.2f}\n"
+        f"Platform: {new_item.get('platform')}\n"
+        f"Style tags: {', '.join(new_item.get('style_tags', []))}\n"
+        f"Outfit plan: {outfit}\n\n"
+        "Write a 2-to-4 sentence social caption. Mention the selected item, its "
+        "price, and its platform exactly once each. Make the styling vibe "
+        "specific and natural, not like a product listing."
+    )
+    return generate(
+        prompt,
+        system="You write concise, useful, non-hyped thrift outfit captions.",
+    )
