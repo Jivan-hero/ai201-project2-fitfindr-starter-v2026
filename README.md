@@ -124,24 +124,66 @@ observable and testable.
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30, size M'
+
+Found: Y2K Baby Tee — Butterfly Print — $18.0 on depop
+
+Outfit: Outfit 1: Y2K Streetwear Contrast
+- Y2K Baby Tee — Butterfly Print
+- Baggy straight-leg jeans, dark wash
+- Black cropped zip hoodie
+- Chunky white sneakers
+- Black crossbody bag
+
+The fitted Y2K baby tee balances the volume of the baggy dark-wash jeans
+for a classic early-2000s silhouette. The cropped hoodie, chunky sneakers,
+and crossbody bag keep the combination grounded in streetwear.
+
+Fit card: Channeling major early-2000s energy with this butterfly print Y2K
+baby tee. Grab it on Depop for $18 to style with baggy denim and a hoodie, or
+dress it down with wide-leg trousers and combat boots. DM to claim.
+
+2 model calls this session, 716 prompt + 345 output tokens
 
 ```
 
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+$ python -c "from tools import search_listings; print([(x['title'], x['price'], x['size']) for x in search_listings('graphic tee', max_price=30)])"
+
+[("Graphic Tee — 2003 Tour Bootleg Style", 24.0, "L"),
+ ("Y2K Baby Tee — Butterfly Print", 18.0, "S/M"),
+ ("Vintage Band Tee — Faded Grey", 19.0, "L"),
+ ("Vintage Graphic Hoodie — Faded Black", 26.0, "L"),
+ ("Mesh Long-Sleeve Top — Black", 15.0, "S/M"),
+ ("Low-Rise Cargo Pants — Khaki", 27.0, "W29")]
 
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+
+Outfit 1: Casual Streetwear
+- New item: Vintage Levi's 501 Jeans — Medium Wash
+- White ribbed tank top
+- Vintage black denim jacket
+- Chunky white sneakers
+- Black crossbody bag
+
+The white tank gives the vintage jeans a clean base, the black denim jacket
+keeps the look in the same classic streetwear family, and the white sneakers
+and black bag make the combination cohesive.
 
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('Pair these jeans with the white ribbed tank and chunky white sneakers for a clean vintage streetwear look.', load_listings()[0]))"
+
+Nothing beats broken-in vintage Levi's 501 jeans for that effortless off-duty
+look. Grab this medium wash pair for $38.00 and style them with a simple white
+ribbed tank and chunky sneakers. Find them live on my Depop to lock down your
+new favorite everyday uniform.
 
 ```
 
@@ -158,15 +200,22 @@ $ python -c "from tools import create_fit_card; ..."
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked AI to challenge a keyword-search design that
+  filtered sizes using substring matching.
+- *What came back:* It pointed out that substring checks make `S` match
+  `US 9` and make `L` match `XL`, which would silently return wrong sizes.
+- *What I changed:* I implemented `_size_matches` with normalized whole tokens,
+  so `M` matches `M` and `S/M` while numeric shoe and waist sizes stay separate.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked AI how a grader could verify that the listing
+  selected by search was the same listing received by the outfit tool.
+- *What came back:* A direct local-variable handoff would work but leave no
+  durable evidence after the call returned.
+- *What I changed:* The loop now saves the listing in `session["selected_item"]`,
+  reads it back for `suggest_outfit`, and records `outfit_input_item_id`. The
+  state criterion can compare stable IDs directly.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
