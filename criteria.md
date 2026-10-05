@@ -25,9 +25,10 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+Search is based on transparent keyword overlap rather than a semantic model,
+so a reasonable paraphrase may miss even when the catalog has a related item.
+Four of five requires reliable end-to-end behavior while leaving one honest
+allowance for vocabulary mismatch or model-service variation.
 
 ---
 
@@ -37,12 +38,13 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+This path is deterministic: an empty Python list is either detected or it is
+not, and no model call is required before stopping. Therefore anything below
+five of five would indicate a real branch or error-message defect.
 
 ---
 
-## 3. Something about state
+## 3. The selected listing survives the tool handoff
 
 <!-- YOU WRITE THIS ONE.
 
@@ -53,16 +55,17 @@ Given a query that matches no listings, the agent stops before calling
      look like state failure — it looks like a tool problem. Something that
      compares session["selected_item"] against what actually reached
      suggest_outfit is the shape you're after. -->
-
-
+For five matching queries, `session["outfit_input_item_id"]` equals
+`session["selected_item"]["id"]` after the run — in 5 of 5 tries.
 
 **Why this target:**
-
-
+The loop deliberately reads the selected item back from session state before
+calling `suggest_outfit`. IDs are stable and unambiguous, so five of five is a
+reasonable target and any mismatch would expose a state-handoff bug.
 
 ---
 
-## 4. Something about the fit card
+## 4. The fit card contains the facts needed to act
 
 <!-- YOU WRITE THIS ONE.
 
@@ -74,16 +77,19 @@ Given a query that matches no listings, the agent stops before calling
      mentions the price? Two different items producing the same opening
      sentence? A card longer than a caption anyone would post? Any of those can
      be turned into a number. -->
-
-
+For five matching queries, the returned fit card is two to four sentences and
+mentions both the selected listing's price and platform — in at least 4 of 5
+tries.
 
 **Why this target:**
-
-
+Price and platform are the minimum facts needed to find the listing, while a
+two-to-four-sentence limit keeps the result usable as a social caption. Because
+the wording comes from a probabilistic model, four of five is strict without
+pretending every generation will follow formatting perfectly.
 
 ---
 
-## 5. Your choice
+## 5. Search always respects the price ceiling
 
 <!-- YOU WRITE THIS ONE TOO.
 
@@ -91,12 +97,13 @@ Given a query that matches no listings, the agent stops before calling
      wardrobe path, what happens when the model can't be reached, whether the
      search respects a price ceiling — anything, as long as it names a number
      or an observable outcome. -->
-
-
+Across five searches that include a maximum price, every returned listing has
+`price <= max_price` — in 5 of 5 tries.
 
 **Why this target:**
-
-
+The price comparison is deterministic and the user's budget is a hard
+constraint, not a preference. Returning even one item over budget would make
+the search tool misleading, so five of five is the appropriate target.
 
 ---
 

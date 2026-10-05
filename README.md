@@ -39,9 +39,12 @@
 
 ## What This Does
 
-<!-- Three or four sentences: what a user asks for, and what they get back. -->
-
-
+FitFindr turns a plain-language thrift request into a ready-to-post outfit idea.
+A user can name an item, size, and price ceiling; the agent searches 40 mock
+listings, selects the best match, combines it with pieces from the user's saved
+wardrobe, and writes a short fit-card caption. If the search finds nothing, the
+agent stops early and tells the user which filters to broaden instead of calling
+the remaining tools with missing data.
 
 ---
 
@@ -59,24 +62,24 @@
 
 ### `search_listings`
 
-- **What it does:**
-- **Inputs:** <!-- name and type each: `max_price` (float), not "a price" -->
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Searches the local listings dataset, applies optional size and inclusive price filters, scores keyword overlap, and ranks the best matches first.
+- **Inputs:** `description` (`str`), `size` (`str | None`), `max_price` (`float | None`). Size matching uses whole normalized size tokens, so `M` matches `M` and `S/M` but not unrelated text such as `W30`.
+- **Returns:** A `list[dict]` of at most 10 listing records; each record contains `id`, `title`, `description`, `category`, `style_tags`, `size`, `condition`, `price`, `colors`, `brand`, and `platform`.
+- **When it has nothing:** Returns an empty list (`[]`).
 
 ### `suggest_outfit`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Uses the model to pair the selected listing with named pieces from the user's wardrobe and explain one or two wearable combinations.
+- **Inputs:** `new_item` (`dict` listing record), `wardrobe` (`dict` with an `items: list[dict]` field).
+- **Returns:** A non-empty `str` containing one or two outfit suggestions grounded in the selected item and available wardrobe pieces.
+- **When it has nothing:** If the wardrobe has no items, returns general styling advice for the selected listing; if the item is missing, returns a descriptive message instead of raising.
 
 ### `create_fit_card`
 
-- **What it does:**
-- **Inputs:**
-- **Returns:**
-- **When it has nothing:**
+- **What it does:** Converts an outfit suggestion and its selected listing into a concise social caption with the item, price, platform, and vibe.
+- **Inputs:** `outfit` (`str`), `new_item` (`dict` listing record).
+- **Returns:** A non-empty `str` containing a two-to-four-sentence fit-card caption.
+- **When it has nothing:** If `outfit` is empty or whitespace, returns a descriptive message explaining that a fit card cannot be created yet.
 
 ---
 
@@ -93,13 +96,21 @@
      The grader checks your code against what you claim here, so the file and
      function have to be real. -->
 
-**Branch rule:**
+**Branch rule:** If `search_listings` returns an empty list, save a message that
+names filters the user can change and stop. Otherwise, save the first result as
+the selected item, pass that exact session item to `suggest_outfit`, then pass
+the saved outfit and item to `create_fit_card`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regular expressions extract `under/below/max $N`
+as `max_price` and `size X` or `in size X` as `size`; the remaining normalized
+text becomes the description. No model call is needed for parsing.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` → `parsed` → `search_results` →
+`selected_item` → `outfit_suggestion` → `fit_card`. The selected listing ID is
+also recorded as `outfit_input_item_id` so state continuity is directly
+observable and testable.
 
 ---
 
