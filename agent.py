@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -40,6 +42,7 @@ def new_session(query: str, wardrobe: dict) -> dict:
         "parsed": {},                # description / size / max_price you pulled out of it
         "search_results": [],        # everything search_listings returned
         "selected_item": None,       # the one you chose — goes into suggest_outfit
+        "outfit_input_item_id": None,  # proves which item reached suggest_outfit
         "wardrobe": wardrobe,        # the user's wardrobe
         "outfit_suggestion": None,   # what suggest_outfit returned
         "fit_card": None,            # what create_fit_card returned
@@ -107,8 +110,77 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     """
     session = new_session(query, wardrobe)
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    price_match = re.search(
+        r"(?:under|below|max(?:imum)?(?: price)?(?: of)?)\s*\$?\s*(\d+(?:\.\d{1,2})?)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    size_match = re.search(
+        r"(?:in\s+)?size\s+([a-z0-9./-]+)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    max_price = float(price_match.group(1)) if price_match else None
+    size = size_match.group(1).upper() if size_match else None
+
+    description = query
+    if price_match:
+        description = description.replace(price_match.group(0), " ")
+    if size_match:
+        description = description.replace(size_match.group(0), " ")
+    description = re.sub(r"[^a-z0-9' -]+", " ", description.lower())
+    description = re.sub(r"\s+", " ", description).strip(" ,-.")
+    for prefix in ("i am looking for ", "i'm looking for ", "looking for ", "find me "):
+        if description.startswith(prefix):
+            description = description[len(prefix):].strip()
+            break
+
+    session["parsed"] = {
+        "description": description,
+        "size": size,
+        "max_price": max_price,
+    }
+
+    stage = "search"
+    iterations = 0
+    while stage != "done":
+        iterations += 1
+        trace.check_iterations(iterations)
+
+        if stage == "search":
+            session["search_results"] = search_listings(
+                description=session["parsed"]["description"],
+                size=session["parsed"]["size"],
+                max_price=session["parsed"]["max_price"],
+            )
+            if not session["search_results"]:
+                session["error"] = (
+                    "I couldn't find a matching listing. Try raising the price "
+                    "limit, removing the size filter, or using broader item words."
+                )
+                return session
+            session["selected_item"] = session["search_results"][0]
+            stage = "outfit"
+            continue
+
+        if stage == "outfit":
+            # Read from session rather than passing a temporary local value.
+            item_for_outfit = session["selected_item"]
+            session["outfit_input_item_id"] = item_for_outfit["id"]
+            session["outfit_suggestion"] = suggest_outfit(
+                new_item=item_for_outfit,
+                wardrobe=session["wardrobe"],
+            )
+            stage = "fit_card"
+            continue
+
+        if stage == "fit_card":
+            session["fit_card"] = create_fit_card(
+                outfit=session["outfit_suggestion"],
+                new_item=session["selected_item"],
+            )
+            stage = "done"
+
     return session
 
 
